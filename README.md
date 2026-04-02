@@ -10,6 +10,11 @@
 
 Unlock Tesla FSD on your Flipper Zero. No subscription, no computer, just plug into OBD-II and go.
 
+<p align="center">
+  <img src="screenshots/main_menu.png" alt="Main Menu" width="256">&nbsp;&nbsp;&nbsp;
+  <img src="screenshots/fsd_running.png" alt="FSD Running" width="256">
+</p>
+
 ---
 
 ## Features

@@ -9,6 +9,11 @@
 
 用 Flipper Zero 解鎖 Tesla FSD。不用訂閱、不用電腦，插上 OBD-II 就能跑。
 
+<p align="center">
+  <img src="screenshots/main_menu.png" alt="主選單" width="256">&nbsp;&nbsp;&nbsp;
+  <img src="screenshots/fsd_running.png" alt="FSD 運作中" width="256">
+</p>
+
 ---
 
 ## 功能
