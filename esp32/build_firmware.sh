@@ -3,6 +3,7 @@
 # Builds one PlatformIO environment and creates:
 #   1) a merged full-flash image for first USB flashing
 #   2) an app-only image for Web UI OTA updates
+#   3) SHA256SUMS.txt with checksums for both firmware images
 
 set -euo pipefail
 
@@ -27,6 +28,7 @@ Outputs:
   build_output/firmware_<env>_<timestamp>/
     <env>_full_<timestamp>.bin   merged full-flash image, USB first flash
     <env>_ota_<timestamp>.bin    app-only firmware, Web UI OTA upload
+    SHA256SUMS.txt               SHA-256 checksums for both .bin files
     bootloader.bin
     partitions.bin
     boot_app0.bin
@@ -179,12 +181,22 @@ echo "[4/4] Creating merged full-flash image"
 cp "$FULL_BIN" "$OUT_ROOT/firmware-full.bin"
 cp "$OTA_BIN" "$OUT_ROOT/firmware-ota.bin"
 
+CHECKSUM_CMD=()
 if command -v shasum >/dev/null 2>&1; then
-    (
-        cd "$OUT_DIR"
-        LC_ALL=C LANG=C shasum -a 256 "$(basename "$FULL_BIN")" "$(basename "$OTA_BIN")" > SHA256SUMS.txt
-    )
+    CHECKSUM_CMD=(shasum -a 256)
+elif command -v sha256sum >/dev/null 2>&1; then
+    CHECKSUM_CMD=(sha256sum)
+else
+    echo "Could not find 'shasum' or 'sha256sum' to create SHA256SUMS.txt." >&2
+    exit 1
 fi
+
+(
+    cd "$OUT_DIR"
+    LC_ALL=C LANG=C "${CHECKSUM_CMD[@]}" "$(basename "$FULL_BIN")" "$(basename "$OTA_BIN")" > SHA256SUMS.txt
+)
+
+cp "$OUT_DIR/SHA256SUMS.txt" "$OUT_ROOT/SHA256SUMS.txt"
 
 cat > "$OUT_DIR/README.txt" <<EOF
 Tesla FSD ESP32 firmware package
@@ -200,6 +212,9 @@ Files:
 
   $(basename "$OTA_BIN")
     App-only image for Web UI OTA updates. Upload this file at http://192.168.4.1.
+
+  SHA256SUMS.txt
+    SHA-256 checksums for the full-flash and OTA firmware images.
 
 USB first flash, single merged file:
   esptool.py --chip $CHIP --port <PORT> --baud $BAUD \\
@@ -223,6 +238,7 @@ Web UI OTA:
 Latest shortcut copies are also written to:
   build_output/firmware-full.bin
   build_output/firmware-ota.bin
+  build_output/SHA256SUMS.txt
 EOF
 
 echo
@@ -243,3 +259,4 @@ echo
 echo "Latest shortcuts:"
 echo "  $OUT_ROOT/firmware-full.bin"
 echo "  $OUT_ROOT/firmware-ota.bin"
+echo "  $OUT_ROOT/SHA256SUMS.txt"
