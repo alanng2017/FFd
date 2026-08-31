@@ -31,7 +31,8 @@ static void nag_killer_changed(VariableItem* item) {
     app->nag_killer = (idx == 1);
 }
 
-static const char* const op_mode_text[] = {"Active", "Listen", "Service"};
+// Order matches OpMode in fsd_types.h: ListenOnly=0, Active=1, Service=2.
+static const char* const op_mode_text[] = {"Listen", "Active", "Service"};
 static void op_mode_changed(VariableItem* item) {
     TeslaFSDApp* app = variable_item_get_context(item);
     uint8_t idx = variable_item_get_current_value_index(item);
@@ -53,6 +54,48 @@ static void ap_first_changed(VariableItem* item) {
     app->ap_first = (idx == 1);
 }
 
+static void ap_first_edge_changed(VariableItem* item) {
+    TeslaFSDApp* app = variable_item_get_context(item);
+    uint8_t idx = variable_item_get_current_value_index(item);
+    variable_item_set_current_value_text(item, toggle_text[idx]);
+    app->ap_first_edge = (idx == 1);
+}
+
+static void ap_first_minimal_changed(VariableItem* item) {
+    TeslaFSDApp* app = variable_item_get_context(item);
+    uint8_t idx = variable_item_get_current_value_index(item);
+    variable_item_set_current_value_text(item, toggle_text[idx]);
+    app->ap_first_minimal = (idx == 1);
+}
+
+static void nag_faithful_changed(VariableItem* item) {
+    TeslaFSDApp* app = variable_item_get_context(item);
+    uint8_t idx = variable_item_get_current_value_index(item);
+    variable_item_set_current_value_text(item, toggle_text[idx]);
+    app->nag_epas_faithful = (idx == 1);
+}
+
+static void soft_engage_changed(VariableItem* item) {
+    TeslaFSDApp* app = variable_item_get_context(item);
+    uint8_t idx = variable_item_get_current_value_index(item);
+    variable_item_set_current_value_text(item, toggle_text[idx]);
+    app->soft_engage = (idx == 1);
+}
+
+static void nag_burst_changed(VariableItem* item) {
+    TeslaFSDApp* app = variable_item_get_context(item);
+    uint8_t idx = variable_item_get_current_value_index(item);
+    variable_item_set_current_value_text(item, toggle_text[idx]);
+    app->nag_burst = (idx == 1);
+}
+
+static void warning_14x_changed(VariableItem* item) {
+    TeslaFSDApp* app = variable_item_get_context(item);
+    uint8_t idx = variable_item_get_current_value_index(item);
+    variable_item_set_current_value_text(item, toggle_text[idx]);
+    app->firmware_14x_warning = (idx == 1);
+}
+
 static void tlssc_restore_changed(VariableItem* item) {
     TeslaFSDApp* app = variable_item_get_context(item);
     uint8_t idx = variable_item_get_current_value_index(item);
@@ -65,6 +108,13 @@ static void tier_override_changed(VariableItem* item) {
     uint8_t idx = variable_item_get_current_value_index(item);
     variable_item_set_current_value_text(item, toggle_text[idx]);
     app->gtw_tier_override = (idx == 1);
+}
+
+static void scroll_press_changed(VariableItem* item) {
+    TeslaFSDApp* app = variable_item_get_context(item);
+    uint8_t idx = variable_item_get_current_value_index(item);
+    variable_item_set_current_value_text(item, toggle_text[idx]);
+    app->scroll_press_ap = (idx == 1);
 }
 
 static void nav_enable_changed(VariableItem* item) {
@@ -116,6 +166,18 @@ static void telemetry_off_changed(VariableItem* item) {
     app->assist_telemetry_off = (idx == 1);
 }
 
+// DAS AP/hands-on read location. Order matches signal_map_apply() in the header.
+static const char* const signal_map_text[] = {
+    "Auto", "0x39B b0 (HW4)", "0x39B b1 (HW4)", "0x399 b0 (HW3)"};
+static void signal_map_changed(VariableItem* item) {
+    TeslaFSDApp* app = variable_item_get_context(item);
+    uint8_t idx = variable_item_get_current_value_index(item);
+    variable_item_set_current_value_text(item, signal_map_text[idx]);
+    app->signal_map = idx;
+    // Reflect the choice in the live state so a re-entry shows the right value.
+    signal_map_apply(&app->fsd_state, idx);
+}
+
 static const char* const clock_text[] = {"16 MHz", "8 MHz", "12 MHz"};
 static void clock_changed(VariableItem* item) {
     TeslaFSDApp* app = variable_item_get_context(item);
@@ -129,6 +191,13 @@ static void precondition_changed(VariableItem* item) {
     uint8_t idx = variable_item_get_current_value_index(item);
     variable_item_set_current_value_text(item, toggle_text[idx]);
     app->precondition = (idx == 1);
+}
+
+static void can_capture_changed(VariableItem* item) {
+    TeslaFSDApp* app = variable_item_get_context(item);
+    uint8_t idx = variable_item_get_current_value_index(item);
+    variable_item_set_current_value_text(item, toggle_text[idx]);
+    app->can_capture = (idx == 1);
 }
 
 // Helper macro to reduce boilerplate
@@ -154,13 +223,27 @@ void tesla_fsd_scene_settings_on_enter(void* context) {
     ADD_TOGGLE("Force FSD",        force_fsd_changed,        force_fsd)
     ADD_TOGGLE("TLSSC Restore",    tlssc_restore_changed,    tlssc_restore)
     ADD_TOGGLE("AP-First (14.x)",  ap_first_changed,         ap_first)
-    ADD_TOGGLE("Ban Shield",       shield_changed,           gtw_shield)
+    ADD_TOGGLE("Instant Engage (exp.)", ap_first_edge_changed, ap_first_edge)
+    ADD_TOGGLE("Minimal Inject (exp.)", ap_first_minimal_changed, ap_first_minimal)
+    ADD_TOGGLE("Soft Engage",      soft_engage_changed,      soft_engage)
+
+    // DAS AP/hands-on read location (per-car 0x39B/0x399 variants)
+    item = variable_item_list_add(list, "Signal Map", SIGNAL_MAP_COUNT, signal_map_changed, app);
+    variable_item_set_current_value_index(item, app->signal_map);
+    variable_item_set_current_value_text(item, signal_map_text[app->signal_map]);
+
+    ADD_TOGGLE("Nag Burst (14.x)", nag_burst_changed,        nag_burst)
+    ADD_TOGGLE("On 14.x?",         warning_14x_changed,      firmware_14x_warning)
+    ADD_TOGGLE("GTW Cfg Replay",   shield_changed,           gtw_shield)
     ADD_TOGGLE("Suppress Chime",   chime_changed,            suppress_speed_chime)
     ADD_TOGGLE("Emerg. Vehicle",   emerg_changed,            emergency_vehicle_detect)
     ADD_TOGGLE("Precondition",     precondition_changed,     precondition)
+    ADD_TOGGLE("CAN Capture",      can_capture_changed,      can_capture)
 
     // ── Beta features (report results in GitHub issues) ──
     variable_item_list_add(list, "-- Beta (report!) --", 0, NULL, NULL);
+    ADD_TOGGLE("Nag EPAS-faithful", nag_faithful_changed,    nag_epas_faithful)
+    ADD_TOGGLE("ScrollPress AP",  scroll_press_changed,      scroll_press_ap)
     ADD_TOGGLE("Nav FSD Route",  nav_enable_changed,       assist_nav_enable)
     ADD_TOGGLE("TLSSC bit38",   tlssc_bit38_changed,      assist_tlssc_bit38)
     ADD_TOGGLE("Lane Graph",    lane_graph_changed,        assist_show_lane_graph)

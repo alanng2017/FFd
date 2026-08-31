@@ -89,6 +89,39 @@ Pinout not yet confirmed — if you test it, please report in an issue.
 Tesla's own service/diagnostic connector. Requires removing a trim
 panel behind the rear armrest. Two versions exist:
 
+> [!IMPORTANT]
+> **The X179 pin→bus map is NOT fixed across builds — verify it on your own car.**
+> At least four distinct electrical configurations now exist (20-pin; pre-Apr-2024
+> 26-pin; the post-SOP10 layout in [#114](https://github.com/hypery11/flipper-tesla-fsd/discussions/114);
+> and a Party/Vehicle/Chassis-on-the-right layout). Model-year inference is
+> unreliable.
+>
+> **The deterministic check is the car's Service Mode → CAN Port page**, which lists
+> each pin's bus by name, keyed to the harness part number. On harness `1933903-XX`
+> (Model Y Juniper RWD, 2025, 2026.14.3), @jewelrylin pulled it from Service Mode
+> ([#100](https://github.com/hypery11/flipper-tesla-fsd/issues/100)):
+>
+> | X179 pin | Bus |
+> |---|---|
+> | 2 / 3 | Party CAN |
+> | 9 / 10 | Vehicle CAN |
+> | **13 / 14** | **Chassis CAN** (green wire) — **not "Bus 6"** |
+> | 20 | GND |
+>
+> This **relabels** much of the "Bus 6 on pin 13/14" framing below: on this harness
+> 13/14 is Chassis CAN, which is why `0x370 EPAS3P` shows there at 100 Hz with full
+> counter continuity (EPAS lives on Chassis) — it was never a gateway-forwarded
+> subset. **`0x370` is on Chassis CAN, not Vehicle CAN** — if you tap Vehicle CAN
+> (9/10) you will not see `0x370`. Aftermarket 3-CAN commanders are wired
+> to X179's three pairs (CAN1/2/3).
+>
+> **For the nag killer, tap Party CAN (pins 2/3).** @SkyRaax runs the nag killer on
+> 2/3 on an M3 HW4 2026.20 with all other features on 13/14 (via a dual-CAN LilyGO
+> T-2CAN), and it works ([#100](https://github.com/hypery11/flipper-tesla-fsd/issues/100)).
+> A single-CAN board tapped on the wrong pair (Chassis or Vehicle) gives the nag
+> killer nothing to act on — the common cause of "nag killer does nothing on HW4."
+> Confirm which pin is Party on your harness via **Service Mode → CAN Port**.
+
 #### X179 20-pin (2021–2023 Model 3/Y)
 
 ```
@@ -114,7 +147,7 @@ panel behind the rear armrest. Two versions exist:
 | **20** | **GND** | Ground |
 
 **4 separate CAN bus pairs** on one connector. Pin 13/14 (bus 6) is
-what aftermarket products (Feifan Commander, enhauto, etc.) connect to.
+what aftermarket products connect to.
 
 #### 26-pin rear connector — two variants
 
@@ -182,6 +215,33 @@ build is:
    pair is likely DoIP — try pin 18/19 instead.
 3. The +12V (pin 15) and GND (pin 26) appear stable across SOPs.
 
+##### Post-SOP10 builds — third CAN pair relocated + Chassis moved to a new left port
+
+> [!CAUTION]
+> On newer Model Y, the diagnostic **connector part is unchanged (same 20
+> cavities, an old cable physically fits), but the bus-to-pin mapping changed
+> and one bus left this port entirely.** Verified against Tesla's official
+> electrical reference across SOP6–SOP11 and reported by @mamixsystem in
+> [discussion #114](https://github.com/hypery11/flipper-tesla-fsd/discussions/114):
+>
+> - The **third CAN pair moved from pins 13–14 to pins 4–5**, and that pair is
+>   now **Body CAN, not Chassis CAN**.
+> - **Chassis CAN was relocated to a new left-side port (X177)** — pins 13–14,
+>   green wires, off the Body Controller Left.
+> - The right port now carries Party + Body + Vehicle CAN; everyday functions
+>   on Party/Vehicle CAN (PRND, regen, climate, lighting) are unaffected, which
+>   is why an old kit still "mostly works" on a new car.
+>
+> Rollout (Tesla SOP dates): **Berlin 2026-04-01 (SOP10)**, Austin 2025-12-04,
+> Fremont 2025-12-09, **Shanghai 2026-03-25 (SOP11)**. Physical check: on a new
+> car pins **4–5 are populated (violet)** and 13–14 empty; on an old car it's
+> the reverse (13–14 populated, green).
+>
+> **Implication for EPAS / nag work:** the planned Chassis-CAN Listen-Only
+> capture (see [#100](https://github.com/hypery11/flipper-tesla-fsd/issues/100))
+> is **not on X179 pin 18/19 on post-SOP10 cars** — Chassis now lives on the
+> left port **X177**. Tap there, not the right port, on these builds.
+
 ### Why X179 Pin 13/14 is the best single connection point (pre-April 2024 only)
 
 The Gateway forwards signals from **multiple internal CAN buses** onto
@@ -223,12 +283,24 @@ And these "Vehicle CAN" signals are also writable on bus 6:
 >
 > A dual-CAN board (e.g. **LILYGO T-2CAN**) gives the full attack surface in
 > one device: Bus 6 for `0x3FD` / `0x370` / `0x3F8` / TLSSC, and Vehicle CAN
-> direct for `0x3C2`. Slated as a v2.16 platformio variant.
+> direct for `0x3C2`. This ships as the `lilygo-t2can` platformio env.
+
+> [!IMPORTANT]
+> **On HW4-modern, `0x370` EPAS3P_sysStatus is the mirror case of `0x3C2`: it is
+> absent from Vehicle CAN (X179 pin 9/10/11).** Dual-CAN captures on two cars —
+> @jewelrylin's Juniper RWD (0 / 20,760 frames over 60 s on pin 9/10) and
+> @DrStrangeglovebox's MYP Giga Berlin (0 / 2,653 on pin 10/11) — confirm `0x370`
+> only appears on **Bus 6 (pin 13/14)** as the gateway-forwarded copy. The EPAS
+> module does **not** receive `0x370` on Vehicle CAN on these trims, so relocating
+> the nag echo from Bus 6 to Vehicle CAN does **not** reach EPAS — it is not a
+> viable nag-killer pivot for HW4-modern. The only remaining X179 location that
+> could carry the EPAS-side frame is **Chassis Bus 3 (pin 18/19)**; until a
+> Listen-Only capture there confirms it, the 14.x HW4 nag path stays open. See
+> [#100](https://github.com/hypery11/flipper-tesla-fsd/issues/100).
 
 **One bus, one connection, reads and writes almost everything.**
 
-This is how the 非凡指揮官 (Feifan Commander, 69K+ sales in China)
-achieves its full feature set with just 4 wires:
+This is how a single-bus commander reaches its full feature set with just 4 wires:
 
 ```
 X179 Pin 13 → CAN-H ──┐
@@ -329,9 +401,9 @@ Build with `pio run -e esp32-mcp2515`, adjust pin config in
 | **Total** | **~$16-20** |
 
 ATOMIC CAN Base snaps onto the ATOM Lite. Solder X179 CAN-H/CAN-L to
-the screw terminals, 12V to VIN, GND to GND. Build: `pio run -e esp32-twai`.
+the screw terminals, 12V to VIN, GND to GND. Build: `pio run -e m5stack-atom`.
 
-### Setup C — LILYGO T-2CAN dual-CAN (~$33)
+### Setup C — LILYGO T-2CAN dual-CAN (~$27-29)
 
 | Component | Price |
 |-----------|-------|
@@ -339,10 +411,12 @@ the screw terminals, 12V to VIN, GND to GND. Build: `pio run -e esp32-twai`.
 | X179 pigtail cable (4-wire) | ~$3-5 |
 | **Total** | **~$27-29** |
 
-The T-2CAN has **dual isolated MCP2515 controllers**, dual screw
-terminals, 12–24V input, WiFi, BLE, QWIIC, and USB-C. Connect X179
-to CAN1 screw terminal. CAN2 stays free for future use (e.g., OBD-II
-Party CAN for redundancy, or a second X179 bus pair).
+The T-2CAN has **two independent CAN controllers — one native ESP32-S3
+TWAI and one MCP2515 (SPI)** — plus dual screw terminals, 12–24V input,
+WiFi, BLE, QWIIC, and USB-C. The `lilygo-t2can` build drives both (the
+`CAN_DRIVER_T2CAN_DUAL` driver). Connect X179 to one screw terminal; the
+other channel stays free for future use (e.g., OBD-II Party CAN for
+redundancy, or a second X179 bus pair).
 
 This is the recommended board for anyone who wants headroom for
 dual-bus features in a future firmware update.
@@ -582,8 +656,7 @@ For any module that stays plugged in:
 3. Wake on MCP2515 INT pin (frame received = car woke up) or on a
    timer (check every 60 seconds).
 
-This is how commercial products (Feifan Commander, enhauto Commander)
-handle permanent installation without draining the 12V battery.
+This is how commercial products handle permanent installation without draining the 12V battery.
 
 ---
 
